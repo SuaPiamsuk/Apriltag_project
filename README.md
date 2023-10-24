@@ -13,5 +13,10 @@ https://github.com/AprilRobotics/apriltag-imgs
 
 ## command
 ```
-convert tagStandard41h12/tag41_12_00026.png -scale 1000% 26.png
+convert tagStandard41h12/tag41_12_00026.png -scale 10000% 26.png
+```
+
+## Average Quaternions
+```
+https://github.com/christophhagen/averaging-quaternions/blob/master/averageQuaternions.py
 ```
