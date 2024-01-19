@@ -1,0 +1,4 @@
+roslaunch docking_pkg coconut_docking.launch 
+
+rosservice call /set "{}" 
+
