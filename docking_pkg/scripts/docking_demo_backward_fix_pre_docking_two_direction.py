@@ -130,6 +130,8 @@ class DemoNode():
         self.tf_robot_to_tag25 = None
         self.tf_odom_to_robot = None
 
+        self.tf_tag25_to_robot = None
+
         self.K = 0
         self.x = 0
         self.P = 0
@@ -169,10 +171,19 @@ class DemoNode():
         self.kp_linear = 0.4
 
         self.docking_distance = 0.38 #from apriltag to center of robot
+
+        self.direction = 0.0
+        self.first_point = True
+
+        self.locked = False
     
     def srv_callback(self,msg):
         self.docking_state = 'init'
+        self.first_point = True
+        self.locked = False
+        self.direction = 0.0
         output = 'start docking'
+        print("srv")
         return output
 
     def odom_callback(self, msg):
@@ -201,7 +212,11 @@ class DemoNode():
         delta_x = self.desired_x - self.odom_current.pose.position.x
         delta_y = self.desired_y - self.odom_current.pose.position.y
         desired_heading = math.atan2(delta_y, delta_x) 
-        heading_error = desired_heading - self.current_yaw - math.pi
+
+        if self.direction > 0.0:
+            heading_error = desired_heading - self.current_yaw # forward only
+        elif self.direction < 0.0:
+            heading_error = desired_heading - self.current_yaw - math.pi # backward only
 
         # Make sure the heading error falls within -PI to PI range
         if (heading_error > math.pi):
@@ -395,6 +410,7 @@ class DemoNode():
                     # find tf robot to tag25
                     try:
                         tf_base_footprint_to_tag25 = self.tfBuffer.lookup_transform('base_footprint', 'tag_25', rospy.Time()) #middle
+                        # tf_base_footprint_to_tag25 = self.tfBuffer.lookup_transform('tag_25', 'base_footprint', rospy.Time()) #middle
                     except:
                         pass
                     else:
@@ -405,24 +421,50 @@ class DemoNode():
                     self.tf_starting_point_to_robot = self.tfBuffer.lookup_transform('starting_point', 'base_footprint', rospy.Time()) #middle
                     self.tf_dist = self.tfBuffer.lookup_transform('starting_point', 'tag_25', rospy.Time()) #middle
 
+
+                    # find tf  tag25 to robot 
+                    try:
+                        tf_tag_25_to_base_footprint = self.tfBuffer.lookup_transform('tag_25', 'base_footprint', rospy.Time()) #middle
+                        # tf_base_footprint_to_tag25 = self.tfBuffer.lookup_transform('tag_25', 'base_footprint', rospy.Time()) #middle
+                    except:
+                        pass
+                    else:
+                        self.tf_tag25_to_robot = tf_tag_25_to_base_footprint
+
+
+
+
+                    # if self.tf_robot_to_tag25.transform.translation.x < -1.0:
                    
+                    #     xx = self.tf_dist.transform.translation.x - 0.95
+                    
+                    # else:
+                    #     # palabola equation
+                    #     # scale = (-0.05*(self.tf_robot_to_tag25.transform.translation.x-2.0)**2) + 0.2 
+                    #     scale = (-0.025*(self.tf_robot_to_tag25.transform.translation.x-2.0)**2) + 0.1
+                    #     xx =  self.tf_starting_point_to_robot.transform.translation.x - scale
+                    # print(abs(self.tf_tag25_to_robot.transform.translation.y)<0.05)
+                    if (self.tf_robot_to_tag25.transform.translation.x > -1.0 and self.tf_robot_to_tag25.transform.translation.x < -0.9) and abs(self.tf_tag25_to_robot.transform.translation.x)<0.10 :
+                        self.first_point = False
+                        # print("omggggggggggggggggggggggggggg")
 
-
-
-
-                    if self.tf_robot_to_tag25.transform.translation.x < -1.0:
+                    if self.first_point == True and (self.tf_robot_to_tag25.transform.translation.x < -1.0 or self.tf_robot_to_tag25.transform.translation.x > -0.9 or abs(self.tf_tag25_to_robot.transform.translation.x)>0.1 ):
                    
                         xx = self.tf_dist.transform.translation.x - 0.95
+                        # self.first_point = False
+                        # print("helpppppppppppppppppppppppppppppp")
+                        
                     
                     else:
                         # palabola equation
                         # scale = (-0.05*(self.tf_robot_to_tag25.transform.translation.x-2.0)**2) + 0.2 
-                        scale = (-0.025*(self.tf_robot_to_tag25.transform.translation.x-2.0)**2) + 0.1
+                        scale = (-0.0375*(self.tf_robot_to_tag25.transform.translation.x-2.0)**2) + 0.15 
+                        # scale = (-0.025*(self.tf_robot_to_tag25.transform.translation.x-2.0)**2) + 0.1
                         xx =  self.tf_starting_point_to_robot.transform.translation.x - scale
+                        
 
+                        # print(self.first_point)
                     
-                    xx = self.tf_dist.transform.translation.x - 0.95
-
                     
                     yy = (-1.0 * (mid_point_x-xx) * slope) + mid_point_y
 
@@ -503,6 +545,7 @@ class DemoNode():
         if self.docking_state == 'init':
             self.time_ = 0.0
             self.reached_distance_goal = False 
+            
             self.docking_state = 'waitting'
         
         elif self.docking_state == 'waitting':
@@ -511,14 +554,42 @@ class DemoNode():
                 self.test()
                 try:
                     if len(self.apriltag_msg.detections) == 3:
-                        self.docking_state = 'going to the docking'
+                        self.time_ = 0.0
+                        self.docking_state = 'waitting2'
                 except:
                     pass
+        elif self.docking_state == 'waitting2':
+            self.time_ = self.time_ + self.duration_time
+            self.test2()
+            if self.time_ >= 0.5:
+                self.docking_state = 'going to the docking'
         
         elif self.docking_state == 'going to the docking':
             self.test2()
             try:
                 robot2predocking = self.tfBuffer.lookup_transform('odom_gz', 'pre_docking', rospy.Time())
+
+                # # robot2predocking_2 = self.tfBuffer.lookup_transform('base_footprint', 'pre_docking', rospy.Time())
+                # robot2predocking_2 = self.tfBuffer.lookup_transform('pre_docking', 'base_footprint', rospy.Time())
+                # _, _, yaw_robot_predocking = euler_from_quaternion(robot2predocking_2.transform.rotation.x , robot2predocking_2.transform.rotation.y, robot2predocking_2.transform.rotation.z, robot2predocking_2.transform.rotation.w)
+                # self.direction = (math.copysign(1, robot2predocking_2.transform.translation.x))
+                # print(self.direction)
+                # print(yaw_robot_predocking)
+                
+                if self.locked == False:
+                    # robot2predocking_2 = self.tfBuffer.lookup_transform('base_footprint', 'pre_docking', rospy.Time())
+                    robot2predocking_2 = self.tfBuffer.lookup_transform('pre_docking', 'base_footprint', rospy.Time())
+                    _, _, yaw_robot_predocking = euler_from_quaternion(robot2predocking_2.transform.rotation.x , robot2predocking_2.transform.rotation.y, robot2predocking_2.transform.rotation.z, robot2predocking_2.transform.rotation.w)
+                    self.direction = (math.copysign(1, robot2predocking_2.transform.translation.x))
+                    
+                    # print((math.copysign(1, robot2predocking_2.transform.translation.x)))
+                    print(robot2predocking_2.transform.translation.x)
+                    print('j')
+                    # print(yaw_robot_predocking)
+                robot2predocking_2 = self.tfBuffer.lookup_transform('pre_docking', 'base_footprint', rospy.Time())
+                print(robot2predocking_2.transform.translation.x)
+                print(self.direction)
+                    
 
                 # defined x,y for caliculate theta
                 self.desired_x = round(robot2predocking.transform.translation.x,3)
@@ -531,12 +602,18 @@ class DemoNode():
                 heading_error = self.get_heading_error()
                 yaw_goal_error = self.get_radians_to_goal()
 
+                # robot2predocking_2 = self.tfBuffer.lookup_transform('base_footprint', 'pre_docking', rospy.Time())
+                # # robot2predocking_2 = self.tfBuffer.lookup_transform('pre_docking', 'base_footprint', rospy.Time())
+                # self.direction = -1.0* (math.copysign(1, robot2predocking_2.transform.translation.x))
+                # print(self.direction)
+                
+
 
                 if (math.fabs(distance_to_goal) > self.distance_goal_tolerance and self.reached_distance_goal == False ):
 
                     # if (math.fabs(heading_error) > 0.2) and self.tf_robot_to_tag25.transform.translation.x > 0.5: # ถ้าระยะน้อยกว่า x จะไม่ปรับ major heading 
                     if (math.fabs(heading_error) > 0.2) and abs(self.tf_robot_to_tag25.transform.translation.x) > 0.6: # ถ้าระยะน้อยกว่า x จะไม่ปรับ major heading 
-                        print("heading")
+                        # print("heading")
 
                         cmd_vel_msg.angular.z = self.kp * heading_error
 
@@ -544,14 +621,16 @@ class DemoNode():
                             cmd_vel_msg.angular.z = self.angular_velocity_max
                         elif cmd_vel_msg.angular.z < -self.angular_velocity_max:
                             cmd_vel_msg.angular.z = -self.angular_velocity_max
+
+                        self.locked = True
                     
                     else: # heading_error = 0.3 and dist err > 0
                         
-                        cmd_vel_msg.linear.x = self.kp_linear * distance_to_goal
+                        cmd_vel_msg.linear.x = self.direction * self.kp_linear * distance_to_goal
                         cmd_vel_msg.angular.z = self.kp * heading_error
                         # if (self.desired_y - self.odom_current.pose.position.y < 0.01) and self.tf_robot_to_tag25.transform.translation.x < 0.6: # ถ้าระยะน้อยกว่า x จะไม่ปรับ heading
-                        if (self.desired_y - self.odom_current.pose.position.y < 0.01) and abs(self.tf_robot_to_tag25.transform.translation.x) < 0.55: # ถ้าระยะน้อยกว่า x จะไม่ปรับ heading
-                            print("go2")
+                        if (self.desired_y - self.odom_current.pose.position.y < 0.01) and abs(self.tf_robot_to_tag25.transform.translation.x) < 0.45: # 0.55 # ถ้าระยะน้อยกว่า x จะไม่ปรับ heading
+                            # print("go2")
                             cmd_vel_msg.angular.z = 0.0
 
                         if cmd_vel_msg.angular.z > self.angular_velocity_max:
@@ -562,11 +641,13 @@ class DemoNode():
                         
                         if cmd_vel_msg.linear.x > self.linear_velocity_max:
                             cmd_vel_msg.linear.x = self.linear_velocity_max
+                        elif cmd_vel_msg.linear.x < -self.linear_velocity_max:
+                            cmd_vel_msg.linear.x = -self.linear_velocity_max
                         
                 
                 # Orient towards the yaw goal angle
                 elif (math.fabs(yaw_goal_error) > self.yaw_goal_tolerance) and abs(self.tf_robot_to_tag25.transform.translation.x) > 0.5 : # ถ้าระยะมากกว่า x จะปรับ heading ตอนไปถึง goal 
-                    print("help")
+                    # print("help")
                     print(math.fabs(yaw_goal_error) )
 
                     cmd_vel_msg.angular.z = (self.kp-0.3) * yaw_goal_error
@@ -595,6 +676,10 @@ class DemoNode():
                     self.cmd_vel.publish(cmd_vel_msg)
 
                     self.reached_distance_goal = False
+                    self.first_point = False
+
+                    self.locked = False
+                    
 
                 #     self.get_logger().info('Arrived at perpendicular line. Going straight to ARTag...')
                     self.reached_distance_goal = False   
@@ -609,11 +694,13 @@ class DemoNode():
         # cmd_vel_msg.linear.x = 0.0
         
         #if backward:
-        cmd_vel_msg.linear.x = -1.0 * cmd_vel_msg.linear.x
+        # cmd_vel_msg.linear.x = -1.0 * cmd_vel_msg.linear.x
             
         self.cmd_vel.publish(cmd_vel_msg)
 
         print(self.docking_state)
+
+        # print(self.locked)
 
 if __name__ == '__main__':
 

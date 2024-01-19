@@ -27,4 +27,5 @@ docking:
  delay_before_start: 0.5 #sec [warning: delay time must >= 0.5]
  first_pre_docking_distance: 0.9 #meters
  docking_distance: 0.38 #meters
+ first_docking_tolerance: 0.05 #meters
 
